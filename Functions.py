@@ -1,10 +1,9 @@
+import datetime
+
 import requests;
 import boto3;
 import json;
-from pyspark.sql import SparkSession
 import multiprocessing
-import pyarrow.parquet as pq
-
 #from connections import set_redshift_con;
 
 FREQNAMES = ['YEARLY', 'MONTHLY', 'WEEKLY', 'DAILY', 'HOURLY', 'MINUTELY', 'SECONDLY']
@@ -18,6 +17,7 @@ FREQNAMES = ['YEARLY', 'MONTHLY', 'WEEKLY', 'DAILY', 'HOURLY', 'MINUTELY', 'SECO
  SECONDLY) = list(range(7))
 
 region = 'us-west-2'
+bucket_name = 'yellowtrip'
 
 def download_file(month_id):
     url = "https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page"
@@ -29,7 +29,6 @@ def download_file(month_id):
     response = requests.get(base_url)
     response.raise_for_status()
     file_name_list = filename.split('_')
-    bucket_name = 'yellowtrip'
     try:
         client.create_bucket(Bucket=bucket_name, CreateBucketConfiguration={'LocationConstraint': region})
         print(f"new bucket was created {bucket_name}")
@@ -71,6 +70,18 @@ def get_num_of_pasangers():
                 ,cast(sum(Passenger_count) as int) Passenger_count
                 FROM "AwsDataCatalog"."brightdata"."yellowtrip" 
                 group by 1  order by 1 """
-    response =run_query(qury)
+    try:
+        athena_client = set_client(c_type='athena')
+        response =run_query(qury)
+        query_execution_id = response['QueryExecutionId']
+        athena_client.get_waiter('query_execution_complete').wait(QueryExecutionId=query_execution_id )
+        return athena_client.get_query_results(QueryExecutionId=query_execution_id)
+    except Exception as e:
+        print(e.__str__())
 
+def set_list_of_month():
+    s3_client = set_client(c_type='s3')
+    response = s3_client.list_objects(bucket_name)
     print(response)
+
+
